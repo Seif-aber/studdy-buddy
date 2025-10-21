@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-function ChatInterface({ selectedDocument }) {
+function ChatInterface() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);

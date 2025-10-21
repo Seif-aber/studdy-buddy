@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import PDFViewer from './PDFViewer';
 
 function LeftPanel({ documents, selectedDocument, onSelectDocument }) {
