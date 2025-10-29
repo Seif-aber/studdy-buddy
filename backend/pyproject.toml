@@ -1,0 +1,25 @@
+[project]
+name = "study-buddy-backend"
+version = "0.1.0"
+description = "AI Study Buddy backend for PDF processing and RAG chat"
+readme = "README.md"
+requires-python = ">=3.11"
+
+dependencies = [
+    "fastapi>=0.104.0",
+    "uvicorn>=0.24.0",
+    "python-multipart>=0.0.6",
+    "langchain>=0.1.0",
+    "langchain-community>=0.0.20",
+    "langchain-text-splitters>=0.0.1",
+    "langchain-groq>=0.0.1",
+    "chromadb>=0.4.22",
+    "pymupdf>=1.23.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "black>=24.0.0",
+    "ruff>=0.1.0",
+]
