@@ -6,6 +6,23 @@ function ChatInterface({ currentDocument }) {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
+  // Format text with markdown-style bold and italic
+  const formatText = (text) => {
+    if (!text) return text;
+    
+    let formatted = text
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')  // Bold: **text**
+      .replace(/\*(.+?)\*/g, '<em>$1</em>');              // Italic: *text*
+    
+    return formatted;
+  };
+
+  // Component to render formatted text
+  const FormattedText = ({ text }) => {
+    const formatted = formatText(text);
+    return <span dangerouslySetInnerHTML={{ __html: formatted }} />;
+  };
+
   const handleSend = async () => {
     if (!input.trim()) return;
 
@@ -73,7 +90,9 @@ function ChatInterface({ currentDocument }) {
                     : 'bg-gray-100 text-gray-800'
                 }`}
               >
-                <p className="whitespace-pre-wrap">{msg.content}</p>
+                <div className="whitespace-pre-wrap">
+                  <FormattedText text={msg.content} />
+                </div>
                 {msg.sources && msg.sources.length > 0 && (
                   <div className="mt-3 pt-3 border-t border-gray-300">
                     <p className="text-xs font-semibold mb-1">📚 Sources:</p>
