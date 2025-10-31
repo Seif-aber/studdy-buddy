@@ -40,7 +40,7 @@ function RightPanel({ activeTab, setActiveTab, selectedDocument }) {
             </div>
           </div>
         ) : activeTab === 'chat' ? (
-          <ChatInterface selectedDocument={selectedDocument} />
+          <ChatInterface currentDocument={selectedDocument} />
         ) : (
           <QuizInterface selectedDocument={selectedDocument} />
         )}

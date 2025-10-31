@@ -1,6 +1,7 @@
 import { useState } from 'react';
+import axios from 'axios';
 
-function ChatInterface() {
+function ChatInterface({ currentDocument }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -13,17 +14,34 @@ function ChatInterface() {
     setInput('');
     setIsLoading(true);
 
-    // TODO: Send to backend API
-    // Simulate AI response for now
-    setTimeout(() => {
+    try {
+      // Call RAG chat API
+      const response = await axios.post('http://localhost:8000/api/chat', {
+        query: input,
+        document_id: currentDocument?.id || null,
+        conversation_history: messages,
+        n_results: 5
+      });
+
       const aiMessage = {
         role: 'assistant',
-        content: 'This is a placeholder response. Backend integration coming soon!',
-        citation: 'Page 1'
+        content: response.data.answer,
+        sources: response.data.sources,
+        context_used: response.data.context_used
       };
+      
       setMessages(prev => [...prev, aiMessage]);
+    } catch (error) {
+      console.error('Chat error:', error);
+      const errorMessage = {
+        role: 'assistant',
+        content: 'Sorry, I encountered an error processing your question. Please try again.',
+        isError: true
+      };
+      setMessages(prev => [...prev, errorMessage]);
+    } finally {
       setIsLoading(false);
-    }, 1000);
+    }
   };
 
   const handleKeyPress = (e) => {
@@ -50,13 +68,25 @@ function ChatInterface() {
                 className={`max-w-[70%] rounded-lg px-4 py-3 ${
                   msg.role === 'user'
                     ? 'bg-blue-600 text-white'
+                    : msg.isError
+                    ? 'bg-red-100 text-red-800'
                     : 'bg-gray-100 text-gray-800'
                 }`}
               >
                 <p className="whitespace-pre-wrap">{msg.content}</p>
-                {msg.citation && (
-                  <p className="text-xs mt-2 opacity-75">
-                    📄 Source: {msg.citation}
+                {msg.sources && msg.sources.length > 0 && (
+                  <div className="mt-3 pt-3 border-t border-gray-300">
+                    <p className="text-xs font-semibold mb-1">📚 Sources:</p>
+                    {msg.sources.map((source, i) => (
+                      <p key={i} className="text-xs opacity-75">
+                        • {source.filename} (Page {source.page_number}) - {Math.round(source.similarity * 100)}% relevant
+                      </p>
+                    ))}
+                  </div>
+                )}
+                {msg.context_used && (
+                  <p className="text-xs mt-2 opacity-60">
+                    Used {msg.context_used} context chunks
                   </p>
                 )}
               </div>

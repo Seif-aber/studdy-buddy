@@ -8,8 +8,10 @@ from datetime import datetime
 
 from fastapi import FastAPI, File, UploadFile, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
 from src.pdf_processor import PDFProcessor
+from src.rag_service import RAGService
 from src.config import Config
 
 app = FastAPI(title="AI Study Buddy API", version="0.1.0")
@@ -26,8 +28,9 @@ app.add_middleware(
 # Global storage for processing status
 processing_status: Dict[str, Dict] = {}
 
-# Initialize processor
+# Initialize processor and RAG service
 processor = PDFProcessor()
+rag_service = RAGService()
 
 
 class ProcessingProgress:
@@ -222,6 +225,52 @@ async def query_documents(query: str, n_results: int = 5):
     try:
         results = processor.query_documents(query, n_results=n_results)
         return results
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# Pydantic models for chat
+class ChatMessage(BaseModel):
+    role: str  # "user" or "assistant"
+    content: str
+
+
+class ChatRequest(BaseModel):
+    query: str
+    document_id: str = None  # filter by specific document
+    conversation_history: list[ChatMessage] = []
+    n_results: int = 5  # Number of context chunks to retrieve
+
+
+@app.post("/api/chat")
+async def chat(request: ChatRequest):
+    """
+    Chat with documents using RAG.
+    
+    Retrieves relevant context from documents and generates an AI response.
+    """
+    try:
+        # Convert conversation history to dict format
+        history = [
+            {"role": msg.role, "content": msg.content}
+            for msg in request.conversation_history
+        ]
+        
+        # Run RAG pipeline
+        result = rag_service.chat(
+            query=request.query,
+            collection_name="documents",
+            document_id=request.document_id,
+            conversation_history=history,
+            n_results=request.n_results
+        )
+        
+        return {
+            "answer": result["answer"],
+            "sources": result["sources"],
+            "context_used": result["context_used"],
+            "query": request.query
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
