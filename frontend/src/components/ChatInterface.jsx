@@ -27,35 +27,107 @@ function ChatInterface({ currentDocument }) {
     if (!input.trim()) return;
 
     const userMessage = { role: 'user', content: input };
+    const currentQuery = input;
     setMessages([...messages, userMessage]);
     setInput('');
     setIsLoading(true);
 
+    // Add a placeholder for the streaming response
+    const aiMessageIndex = messages.length + 1;
+    setMessages(prev => [...prev, {
+      role: 'assistant',
+      content: '',
+      sources: [],
+      context_used: 0,
+      isStreaming: true
+    }]);
+
     try {
-      // Call RAG chat API
-      const response = await axios.post('http://localhost:8000/api/chat', {
-        query: input,
-        document_id: currentDocument?.id || null,
-        conversation_history: messages,
-        n_results: 5
+      // Use Server-Sent Events for streaming
+      const response = await fetch('http://localhost:8000/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          query: currentQuery,
+          document_id: currentDocument?.id || null,
+          conversation_history: messages,
+          n_results: 5
+        }),
       });
 
-      const aiMessage = {
-        role: 'assistant',
-        content: response.data.answer,
-        sources: response.data.sources,
-        context_used: response.data.context_used
-      };
-      
-      setMessages(prev => [...prev, aiMessage]);
+      if (!response.ok) {
+        throw new Error('Stream request failed');
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || ''; // Keep incomplete line in buffer
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const data = JSON.parse(line.slice(6));
+            
+            if (data.type === 'content') {
+              // Append content chunk
+              setMessages(prev => {
+                const updated = [...prev];
+                updated[aiMessageIndex] = {
+                  ...updated[aiMessageIndex],
+                  content: updated[aiMessageIndex].content + data.data
+                };
+                return updated;
+              });
+            } else if (data.type === 'sources') {
+              // Add sources and context info
+              setMessages(prev => {
+                const updated = [...prev];
+                updated[aiMessageIndex] = {
+                  ...updated[aiMessageIndex],
+                  sources: data.data.sources,
+                  context_used: data.data.context_used,
+                  isStreaming: false
+                };
+                return updated;
+              });
+            } else if (data.type === 'done') {
+              // Streaming complete
+              setMessages(prev => {
+                const updated = [...prev];
+                updated[aiMessageIndex] = {
+                  ...updated[aiMessageIndex],
+                  isStreaming: false
+                };
+                return updated;
+              });
+            } else if (data.type === 'error') {
+              throw new Error(data.data);
+            }
+          }
+        }
+      }
     } catch (error) {
       console.error('Chat error:', error);
-      const errorMessage = {
-        role: 'assistant',
-        content: 'Sorry, I encountered an error processing your question. Please try again.',
-        isError: true
-      };
-      setMessages(prev => [...prev, errorMessage]);
+      setMessages(prev => {
+        const updated = [...prev];
+        updated[aiMessageIndex] = {
+          role: 'assistant',
+          content: 'Sorry, I encountered an error processing your question. Please try again.',
+          isError: true,
+          isStreaming: false
+        };
+        return updated;
+      });
     } finally {
       setIsLoading(false);
     }
@@ -92,6 +164,9 @@ function ChatInterface({ currentDocument }) {
               >
                 <div className="whitespace-pre-wrap">
                   <FormattedText text={msg.content} />
+                  {msg.isStreaming && (
+                    <span className="inline-block w-2 h-4 ml-1 bg-gray-600 animate-pulse"></span>
+                  )}
                 </div>
                 {msg.sources && msg.sources.length > 0 && (
                   <div className="mt-3 pt-3 border-t border-gray-300">

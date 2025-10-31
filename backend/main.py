@@ -8,7 +8,9 @@ from datetime import datetime
 
 from fastapi import FastAPI, File, UploadFile, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+import json
 
 from src.pdf_processor import PDFProcessor
 from src.rag_service import RAGService
@@ -245,9 +247,9 @@ class ChatRequest(BaseModel):
 @app.post("/api/chat")
 async def chat(request: ChatRequest):
     """
-    Chat with documents using RAG.
+    Chat with documents using RAG with streaming response.
     
-    Retrieves relevant context from documents and generates an AI response.
+    Streams the AI response in real-time using Server-Sent Events.
     """
     try:
         # Convert conversation history to dict format
@@ -256,21 +258,34 @@ async def chat(request: ChatRequest):
             for msg in request.conversation_history
         ]
         
-        # Run RAG pipeline
-        result = rag_service.chat(
-            query=request.query,
-            collection_name="documents",
-            document_id=request.document_id,
-            conversation_history=history,
-            n_results=request.n_results
-        )
+        async def event_generator():
+            """Generate Server-Sent Events for streaming."""
+            try:
+                # Stream RAG pipeline
+                for chunk in rag_service.chat_stream(
+                    query=request.query,
+                    collection_name="documents",
+                    document_id=request.document_id,
+                    conversation_history=history,
+                    n_results=request.n_results
+                ):
+                    # Format as SSE
+                    yield f"data: {json.dumps(chunk)}\n\n"
+                
+                # Send completion signal
+                yield f"data: {json.dumps({'type': 'done'})}\n\n"
+            except Exception as e:
+                # Send error
+                yield f"data: {json.dumps({'type': 'error', 'data': str(e)})}\n\n"
         
-        return {
-            "answer": result["answer"],
-            "sources": result["sources"],
-            "context_used": result["context_used"],
-            "query": request.query
-        }
+        return StreamingResponse(
+            event_generator(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+            }
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

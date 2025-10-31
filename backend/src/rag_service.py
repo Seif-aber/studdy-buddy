@@ -158,6 +158,74 @@ Answer the question based on the context above. If you reference specific inform
             "context_used": len(context_chunks)
         }
 
+    def generate_answer_stream(
+        self,
+        query: str,
+        context_chunks: List[Dict[str, any]],
+        conversation_history: Optional[List[Dict[str, str]]] = None
+    ):
+        """
+        Generate an answer using the LLM with streaming.
+        """
+        # Format context
+        context = self.format_context(context_chunks)
+        
+        # Build prompt
+        prompt = f"""Context from documents:
+
+{context}
+
+---
+
+Question: {query}
+
+Answer the question based on the context above. If you reference specific information, mention the page number."""
+
+        # Build message history
+        messages = [SystemMessage(content=self.system_prompt)]
+        
+        # Add conversation history if provided
+        if conversation_history:
+            for msg in conversation_history[-6:]:  # Last 3 exchanges
+                if msg["role"] == "user":
+                    messages.append(HumanMessage(content=msg["content"]))
+                elif msg["role"] == "assistant":
+                    messages.append(AIMessage(content=msg["content"]))
+        
+        # Add current query
+        messages.append(HumanMessage(content=prompt))
+        
+        # Extract sources (unique page numbers)
+        sources = []
+        seen = set()
+        for chunk in context_chunks:
+            key = (chunk.get("document_id"), chunk.get("page_number"))
+            if key not in seen and chunk.get("page_number"):
+                seen.add(key)
+                sources.append({
+                    "document_id": chunk.get("document_id"),
+                    "filename": chunk.get("filename"),
+                    "page_number": chunk.get("page_number"),
+                    "similarity": chunk.get("similarity")
+                })
+        
+        # Stream response from LLM
+        for chunk in self.llm.stream(messages):
+            if chunk.content:
+                yield {
+                    "type": "content",
+                    "data": chunk.content
+                }
+        
+        # Send sources at the end
+        yield {
+            "type": "sources",
+            "data": {
+                "sources": sources,
+                "context_used": len(context_chunks)
+            }
+        }
+
     def chat(
         self,
         query: str,
@@ -195,3 +263,30 @@ Answer the question based on the context above. If you reference specific inform
         )
         
         return result
+
+    def chat_stream(
+        self,
+        query: str,
+        collection_name: str = "documents",
+        document_id: Optional[str] = None,
+        conversation_history: Optional[List[Dict[str, str]]] = None,
+        n_results: int = 5
+    ):
+        """
+        Complete RAG chat pipeline with streaming: retrieve context and generate answer.
+        """
+        # Step 1: Retrieve relevant context
+        context_chunks = self.retrieve_context(
+            query=query,
+            collection_name=collection_name,
+            n_results=n_results,
+            document_id=document_id
+        )
+        
+        # Step 2: Stream answer with LLM
+        for chunk in self.generate_answer_stream(
+            query=query,
+            context_chunks=context_chunks,
+            conversation_history=conversation_history
+        ):
+            yield chunk
